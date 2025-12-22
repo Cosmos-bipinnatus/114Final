@@ -1,92 +1,57 @@
-from typing import Annotated, List, Union
-
-from fastapi import Body, Cookie, FastAPI, Form, Path
-from pydantic import BaseModel, Field
-
-class Item(BaseModel):
-    name: str
-    description: str | None = Field(
-        default = None, title="The description of the item", max_length=300
-    )
-    price: float = Field(gt=0,json_schema_extra="The price must be greater than zero")
-    #price: float = Field(gt=0,decription = "The price must be greater than zero")
-    tax: Union[float, None] = None
-    tags: list[str] = []
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+import folium
+from folium.plugins import LocateControl
 
 app = FastAPI()
 
-
-@app.post("/login")
-async def login(
-    username: Annotated[str, Form()],
-    password: Annotated[str, Form()]
-):
-    return {"username": username}
-
-@app.get("/'")
-async def root():
-    return  {"message": "Hello wowrld"}
-
-@app.get("/items/{item_id}")
-async def read_item(item_id):
-    return {"item_id": item_id}
-
-"""
-
-@app.get("/items/")
-async def read_item(skip: int =0 , limit: int = 10):
-    return fake_items_db[skip: skip + limit]
-
-fake_items_db = [
-    {"item_name": "Foo"},
-    {"item_name": "Bar"},
-    {"item_name": "Baz"}      
-                  
-]
-
-"""
-
-@app.get("/items")
-async def read_items(ads_id: Annotated[str | None, Cookie()]):
-    return {"ads_id": ads_id}
-
-#async def read_items(ads_id: Annotated[str | None, Cookie()]) -> list[Item]:
-
-"""
-
-@app.post("/items/")
-async def create_item(item: Item):
-    item_dict = item.model_dump() #item.dict()
-    if item.tax is not None:
-        price_with_tax = item.price + item.tax
-        item_dict.update({"price_with_tax": price_with_tax})
-    return item_dict
-
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    # 1. 設定定位中心：雲林 (以斗六車站附近為例)
+    yunlin_center = [23.7119, 120.5414] 
     
-"""
+    # 建立地圖，zoom_start 設定大一點 (15) 才能看清街道
+    m = folium.Map(location=yunlin_center, zoom_start=15, tiles=None)
 
-@app.post("/items/")
-async def create_item(item: Item) -> Item:
-    return Item
+    # 2. 設定國土測繪中心 API (通用版電子地圖)
+    nlsc_url = "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}"
 
-"""
+    # 加入底圖圖層
+    folium.TileLayer(
+        tiles=nlsc_url,
+        attr="國土測繪中心",
+        name="Taiwan e-Map"
+    ).add_to(m)
 
-@app.put("/items/{item_id}")
-async def update_item(
-    item_id: Annotated[int , Path(title="The ID of the item to get",ge=0,le=1000)],
-    q: str | None = None,
-    item: Item | None = None
-):
-    results = {"item_id": item_id}
-    if q:
-        results.update({"q": q})
-    if item:
-        results.update({"item": item})
-    return results
+    # 3. 加入 AED 資料 (模擬數據)
+    # 在實際專案中，這裡通常會從資料庫或政府 Open Data API 讀取
+    aed_locations = [
+        {"name": "雲林縣政府 AED", "lat": 23.7095, "lon": 120.5435, "desc": "位於一樓大廳"},
+        {"name": "斗六火車站 AED", "lat": 23.7119, "lon": 120.5414, "desc": "售票口旁"},
+        {"name": "雲林科技大學 AED", "lat": 23.6961, "lon": 120.5342, "desc": "行政大樓"},
+        {"name": "雲林國中 AED", "lat": 23.7060, "lon": 120.5380, "desc": "警衛室"}
+    ]
 
-"""
+    # 將每一個 AED 畫在地圖上
+    for aed in aed_locations:
+        folium.Marker(
+            location=[aed["lat"], aed["lon"]],
+            popup=folium.Popup(f"<b>{aed['name']}</b><br>{aed['desc']}", max_width=300),
+            tooltip=aed["name"],
+            icon=folium.Icon(color="red", icon="heart", prefix="fa") # 使用紅色愛心圖示
+        ).add_to(m)
 
-@app.put("/items/{item_id}")
-async def update_item(item_id: int, item: Annotated[Item, Body(embed=True)]):
-    results = {"item_id": item_id, "item": item}
-    return results
+    # 4. 加入使用者自我定位按鈕 (GUI 功能)
+    # 這會在地圖左上角增加一個按鈕，點擊後瀏覽器會請求位置權限並定位使用者
+    LocateControl(
+        auto_start=False,
+        strings={"title": "顯示我的位置"}
+    ).add_to(m)
+
+    # 5. 將地圖轉為 HTML 字串回傳
+    return m.get_root().render()
+
+if __name__ == "__main__":
+    import uvicorn
+    # 執行伺服器
+    uvicorn.run(app, host="0.0.0.0", port=8000)
