@@ -7,57 +7,57 @@ import csv
 import io
 import urllib3 # 新增這行
 
-# 忽略安全憑證的警告訊息
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# ... (上面的 import 不變)
+# 移除 requests, io, urllib3 (因為主程式不需要連網下載了)
 
 app = FastAPI()
 
 def load_real_aed_data():
-    url = "https://tw-aed.mohw.gov.tw/openData?t=csv"
-    print(f"正在連線至衛福部下載資料: {url} ...")
+    # 改為讀取本地檔案
+    csv_filename = "aed_data.csv"
+    print(f"正在讀取本地資料: {csv_filename} ...")
+    
+    real_locations = []
     
     try:
-        # 【關鍵修改】 verify=False 表示不檢查 SSL 憑證
-        response = requests.get(url, verify=False) 
-        response.raise_for_status()
-        response.encoding = 'utf-8'
-        
-        csv_file = io.StringIO(response.text)
-        reader = csv.DictReader(csv_file)
-        
-        real_locations = []
-        
-        for row in reader:
-            address = row.get('場所地址') or row.get('地址') or ''
+        with open(csv_filename, mode='r', encoding='utf-8') as csv_file:
+            reader = csv.DictReader(csv_file)
             
-            if "雲林" in address:
-                try:
-                    name = row.get('場所名稱')
-                    lat = row.get('地點LAT') or row.get('WGS84緯度')
-                    lon = row.get('地點LNG') or row.get('WGS84經度')
-                    desc = row.get('AED放置地點') or row.get('地點詳述')
-                    
-                    if lat and lon:
-                        real_locations.append({
-                            "name": name, 
-                            "lat": float(lat), 
-                            "lon": float(lon), 
-                            "desc": desc
-                        })
-                except ValueError:
-                    continue
-
+            for row in reader:
+                address = row.get('場所地址') or row.get('地址') or ''
+                
+                # 這裡保留原本的篩選邏輯
+                if "雲林" in address:
+                    try:
+                        name = row.get('場所名稱')
+                        lat = row.get('地點LAT') or row.get('WGS84緯度')
+                        lon = row.get('地點LNG') or row.get('WGS84經度')
+                        desc = row.get('AED放置地點') or row.get('地點詳述')
+                        
+                        if lat and lon:
+                            real_locations.append({
+                                "name": name, 
+                                "lat": float(lat), 
+                                "lon": float(lon), 
+                                "desc": desc
+                            })
+                    except ValueError:
+                        continue
+        
         print(f"🎉 成功！載入了 {len(real_locations)} 筆雲林 AED 資料！")
         return real_locations
 
-    except Exception as e:
-        # 如果還是失敗，會印出詳細錯誤原因
-        print(f"❌ 下載失敗！錯誤原因: {e}")
+    except FileNotFoundError:
+        # 如果還沒有跑過下載腳本，會回傳空或備用資料
+        print("⚠️ 找不到 CSV 檔案！")
         return [
-             {"name": "(備用) 雲林縣政府", "lat": 23.7095, "lon": 120.5435, "desc": "下載失敗，這是備用資料"},
-             {"name": "(備用) 斗六火車站", "lat": 23.7119, "lon": 120.5414, "desc": "下載失敗，這是備用資料"}
+             {"name": "(資料尚未同步)", "lat": 23.7095, "lon": 120.5435, "desc": "請等待系統更新"}
         ]
+    except Exception as e:
+        print(f"❌ 讀取失敗: {e}")
+        return []
 
+# ... (其餘路由程式碼保持不變)
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     yunlin_center = [23.7119, 120.5414] 
